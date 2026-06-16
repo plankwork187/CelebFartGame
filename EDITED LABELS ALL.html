@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: sans-serif; }
+#game { font-family: var(--font-sans, sans-serif); width: 100%; position: relative; }
+#mode-bar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+#mode-bar span { font-size: 13px; color: var(--color-text-secondary, #888); font-weight: 500; margin-right: 4px; }
+.mode-btn { padding: 6px 16px; font-size: 13px; font-weight: 500; border-radius: 8px; border: 0.5px solid #ccc; background: var(--color-background-primary, #fff); color: var(--color-text-primary, #111); cursor: pointer; transition: background 0.15s; }
+.mode-btn.active { background: #E75480; color: #fff; border-color: #E75480; }
+#scene { width: 100%; height: 340px; background: #a8d8a8; position: relative; overflow: hidden; border-radius: 12px; border: 0.5px solid #ddd; }
+#sky { position: absolute; top: 0; left: 0; right: 0; height: 55%; background: #87CEEB; }
+#ground { position: absolute; bottom: 0; left: 0; right: 0; height: 45%; background: #5a9a3a; }
+#path { position: absolute; bottom: 55px; left: 0; right: 0; height: 28px; background: #c8b89a; border-top: 2px solid #a89070; border-bottom: 2px solid #a89070; }
+
+/* bench behind player */
+#bench-img {
+  position: absolute;
+  bottom: 48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 305px;
+  height: auto;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* player sitting behind bench visually */
+#player-wrap {
+  position: absolute;
+  bottom: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 143px;
+  height: auto;
+  transform-origin: bottom center;
+  z-index: 2;
+  transition: none;
+}
+#player-img {
+  width: 100px;
+  height: auto;
+  pointer-events: none;
+  display: block;
+}
+
+.cloud { position: absolute; border-radius: 50%; pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 13px; z-index: 5; }
+.npc { position: absolute; bottom: 132px; width: 56px; height: 112px; z-index: 4; }
+.npc-head { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 36px; height: 36px; border-radius: 50%; }
+.npc-body { position: absolute; top: 32px; left: 50%; transform: translateX(-50%); width: 40px; height: 48px; border-radius: 6px; }
+.npc-legs { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); width: 40px; display: flex; gap: 6px; height: 36px; }
+.npc-leg { flex: 1; border-radius: 4px 4px 8px 8px; }
+.npc-react { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 14px; pointer-events: none; }
+.npc-A .npc-head { background: #DEB887; }
+.npc-A .npc-body { background: #228B22; }
+.npc-A .npc-leg { background: #8B4513; }
+.npc-B .npc-head { background: #F4A460; }
+.npc-B .npc-body { background: #4169E1; }
+.npc-B .npc-leg { background: #2F2F2F; }
+.npc-C .npc-head { background: #FDBCB4; }
+.npc-C .npc-body { background: #800080; }
+.npc-C .npc-leg { background: #696969; }
+.npc-D .npc-head { background: #8B4513; }
+.npc-D .npc-body { background: #CC4400; }
+.npc-D .npc-leg { background: #333; }
+
+#facecam {
+  position: absolute; top: 10px; right: 10px;
+  width: 150px; height: 150px;
+  border: 2.5px solid rgba(255,255,255,0.7);
+  border-radius: 12px; overflow: hidden;
+  z-index: 10;
+  background: transparent;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+#facecam img {
+  width: 100%; height: 100%;
+  object-fit: cover; object-position: center top;
+  display: block;
+  mix-blend-mode: multiply;
+}
+#face-label {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  font-size: 9px; color: #fff; font-weight: 700; text-align: center;
+  background: rgba(0,0,0,0.45); padding: 2px 0;
+  letter-spacing: 0.3px;
+}
+
+#power-ring { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); width: 60px; height: 60px; pointer-events: none; z-index: 6; }
+#hud { display: grid; grid-template-columns: 1fr 1fr 90px; gap: 8px; margin-top: 10px; }
+.hud-card { background: var(--color-background-secondary, #f5f5f5); border-radius: 8px; padding: 8px 12px; }
+.hud-label { font-size: 11px; color: var(--color-text-secondary, #888); font-weight: 500; margin-bottom: 5px; }
+.bar-bg { background: #ddd; border-radius: 99px; height: 9px; overflow: hidden; }
+.bar-fill { height: 9px; border-radius: 99px; transition: width 0.12s, background 0.3s; }
+#score-card { background: var(--color-background-secondary, #f5f5f5); border-radius: 8px; padding: 8px 12px; text-align: center; }
+#score-label { font-size: 11px; color: var(--color-text-secondary, #888); font-weight: 500; }
+#score-val { font-size: 24px; font-weight: 500; color: var(--color-text-primary, #111); line-height: 1.2; }
+#controls { display: flex; gap: 8px; margin-top: 8px; }
+#controls button { flex: 1; padding: 16px 0; font-size: 15px; font-weight: 500; cursor: pointer; border-radius: 8px; border: 0.5px solid #ccc; background: var(--color-background-primary, #fff); color: var(--color-text-primary, #111); user-select: none; -webkit-user-select: none; touch-action: none; }
+#controls button:active, #controls button.held { background: #E75480; color: #fff; border-color: #E75480; transform: scale(0.98); }
+#status-msg { text-align: center; font-size: 12px; color: var(--color-text-secondary, #888); margin-top: 6px; min-height: 16px; font-style: italic; }
+#overlay {
+  display: none; position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.72); border-radius: 12px; z-index: 30;
+  align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+}
+#overlay.show { display: flex; }
+#overlay-title { font-size: 26px; font-weight: 700; color: #fff; text-align: center; }
+#overlay-sub { font-size: 14px; color: rgba(255,255,255,0.85); text-align: center; max-width: 260px; line-height: 1.4; }
+#overlay-score { font-size: 15px; color: rgba(255,255,255,0.75); }
+#overlay-btn { padding: 10px 28px; border-radius: 8px; border: none; background: #E75480; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+#power-label { position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%); font-size: 10px; font-weight: 500; color: var(--color-text-secondary, #888); pointer-events: none; white-space: nowrap; z-index: 7; }
+
+#char-select{
+  position:absolute;
+  inset:0;
+  z-index:200;
+  background:rgba(0,0,0,.88);
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:20px;
+}
+
+.char-card{
+  background:white;
+  color:black;
+  padding:12px;
+  border-radius:12px;
+  cursor:pointer;
+  text-align:center;
+}
+
+.char-card img{
+  width:120px;
+  height:120px;
+  object-fit:contain;
+}
+
+.lean-left  { transform: translateX(-50%) rotate(-12deg) !important; }
+.lean-right { transform: translateX(-50%) rotate(12deg) !important; }
+.lean-extreme-left  { transform: translateX(-50%) rotate(-16deg) !important; }
+.lean-extreme-right { transform: translateX(-50%) rotate(16deg) !important; }
+</style></head>
+<body>
+<div id="game">
+  <div id="mode-bar">
+    <span>Mode:</span>
+    <button class="mode-btn active" id="btn-stealth" onclick="setMode('stealth')">Stealth</button>
+    <button class="mode-btn" id="btn-chaos" onclick="setMode('chaos')">Chaos (infinite gas)</button>
+  </div>
+
+  <div id="scene">
+<div id="char-select">
+
+  <div class="char-card" onclick="selectCharacter('char1')">
+
+    <img id="char1-preview">
+
+    <div>Sabrina Carpenter</div>
+
+  </div>
+
+  <div class="char-card" onclick="selectCharacter('char2')">
+
+    <img id="char2-preview">
+
+    <div>Olivia Rodrigo</div>
+
+  </div>
+
+</div>
+    <div id="sky"></div>
+    <div id="ground"></div>
+    <div id="path"></div>
+
+    <div id="player-wrap">
+      <img id="player-img" src="images/char1_body.png" alt="player"/>
+    </div>
+
+    <img id="bench-img" src="images/bench.png" alt="bench"/>
+
+    <svg id="power-ring" viewBox="0 0 60 60" style="opacity:0;transition:opacity 0.2s;">
+      <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="3"/>
+      <circle id="power-arc" cx="30" cy="30" r="26" fill="none" stroke="#E75480" stroke-width="3.5"
+        stroke-dasharray="0 163" stroke-linecap="round" transform="rotate(-90 30 30)"/>
+    </svg>
+    <div id="power-label"></div>
+
+    <div id="facecam">
+      <img id="face-img" src="images/facecam_bg.png" alt="facecam"/>
+      <div id="face-label">relaxed</div>
+    </div>
+
+    <div id="overlay">
+      <div id="overlay-title">Busted!</div>
+      <div id="overlay-sub"></div>
+      <div id="overlay-score"></div>
+      <button id="overlay-btn" onclick="resetGame()">Play again</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div class="hud-card">
+      <div class="hud-label">Suspicion</div>
+      <div class="bar-bg"><div class="bar-fill" id="susp-bar" style="width:0%;background:#3a9e3a"></div></div>
+    </div>
+    <div class="hud-card" id="gas-card">
+      <div class="hud-label">Gas pressure</div>
+      <div class="bar-bg"><div class="bar-fill" id="gas-bar" style="width:30%;background:#e8a020"></div></div>
+    </div>
+    <div id="score-card">
+      <div id="score-label">Score</div>
+      <div id="score-val">0</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-left" style="border-radius:8px 0 0 8px;border-right:none;">← Hold Left</button>
+    <button id="btn-right" style="border-radius:0 8px 8px 0;border-left:none;">Hold Right →</button>
+  </div>
+  <div id="status-msg">Hold a button to lean and fart — longer = more powerful!</div>
+</div>
+
+<script>
+const W = 680;
+const PLAYER_X = W / 2;
+const CIRC = 2 * Math.PI * 26;
+
+// ── Image data ─────────────────────────────────────────────────────────────
+const IMG = {
+  lean1:    'images/char1_lean1.png',
+  lean2:    'images/char1_lean2.png',
+  lean_ext: 'images/char1_lean_ext.png',
+  caught1:  'images/char1_caught1.png',
+  caught2:  'images/char1_caught2.png',
+  disc_low: 'images/char1_disc_low.png',
+  disc_high:'images/char1_disc_high.png',
+  relief:   'images/char1_relief.png',
+};
+
+/* CHARACTER 2 ASSETS START HERE */
+
+const CHAR2_BODY =
+'images/char2_body.png';
+
+const CHAR2_DISC_LOW =
+'images/char2_disc_low.png';
+
+const CHAR2_DISC_HIGH =
+'images/char2_disc_high.png';
+
+const CHAR2_LEAN1 =
+'images/char2_lean1.png';
+
+const CHAR2_LEAN2 =
+'images/char2_lean2.png';
+
+const CHAR2_LEAN_EXT =
+'images/char2_lean_ext.png';
+
+const CHAR2_RELIEF =
+'images/char2_relief.png';
+
+const CHAR2_CAUGHT1 =
+'images/char2_caught1.png';
+
+const CHAR2_CAUGHT2 =
+'images/char2_caught2.png';
+
+/* CHARACTER 2 ASSETS END HERE */
+
+const CHAR1_PROFILE =
+'images/char1_profile.png';
+
+const CHAR2_PROFILE =
+'images/char2_profile.png';
+
+let selectedCharacter = null;
+
+const CHARACTERS = {
+
+  char1: {
+
+  body: null,
+
+  profile: CHAR1_PROFILE,
+
+  faces: IMG
+
+},
+
+  char2: {
+
+  body: CHAR2_BODY,
+
+  profile: CHAR2_PROFILE,
+
+  faces: {
+
+    disc_low: CHAR2_DISC_LOW,
+    disc_high: CHAR2_DISC_HIGH,
+
+    lean1: CHAR2_LEAN1,
+    lean2: CHAR2_LEAN2,
+
+    lean_ext: CHAR2_LEAN_EXT,
+
+    relief: CHAR2_RELIEF,
+
+    caught1: CHAR2_CAUGHT1,
+    caught2: CHAR2_CAUGHT2
+
+    }
+
+  }
+
+};
+
+// ── Dialogue pools ──────────────────────────────────────────────────────────
+const DIALOGUE = {
+  holding: [
+    "Ok... just hold it together...",
+    "Not now, not now, NOT NOW...",
+    "My stomach is staging a revolt.",
+    "This is fine. Everything is fine.",
+    "I shouldn't have had that burrito.",
+    "The pressure is... immense.",
+    "My colon has demands.",
+    "I am in full negotiation with my gut.",
+    "Stay calm. Stay calm. Stay CALM.",
+    "Why did I eat at that food truck...",
+    "Body: release. Brain: not yet.",
+    "This bench is not helping.",
+    "Internal weather report: severe turbulence.",
+    "The volcano shall not erupt today.",
+    "Clenching with the power of a thousand suns.",
+  ],
+  leaning: [
+    "Ok... angle of attack: confirmed.",
+    "Lean it out, lean it out...",
+    "Directional release commencing...",
+    "Strategic tilt engaged. 🎯",
+    "Rotating for optimal dispersal.",
+    "This is a precision operation.",
+    "Wind trajectory looks good...",
+    "The lean of shame begins.",
+    "45 degrees from dignity.",
+    "Casually adjusting... yes... just stretching.",
+    "Nobody suspects the lean.",
+    "Leaning like I dropped something.",
+  ],
+  release: [
+    "......... did anyone hear that?",
+    "Silent but deadly. As planned.",
+    "Mission accomplished 💨",
+    "Like a whisper in the wind.",
+    "That one had RANGE.",
+    "She toots, she scores.",
+    "Nature has been answered.",
+    "And the pressure... is gone. 😮‍💨",
+    "Perfectly executed. No witnesses.",
+    "The deed is done.",
+    "A masterpiece of discretion.",
+    "The atmosphere has been... altered.",
+    "Mona Lisa of farts. Silent. Deadly. Art.",
+    "Internal volcano: dormant (for now).",
+    "That was a 9.2 on the Richter scale.",
+  ],
+  suspicious: [
+    "That lady is sniffing the air... abort!",
+    "Why is he looking around like that??",
+    "He definitely smelled it. He's scanning.",
+    "HER NOSE JUST TWITCHED.",
+    "Play it cool. You're just sitting here.",
+    "They know. They all know.",
+    "The eyes. They're accusing.",
+    "Someone is doing the smell face.",
+    "Innocent face. Innocent face. INNOCENT FACE.",
+    "Just look at your phone. Look at your phone.",
+    "Act natural. ACT. NATURAL.",
+    "Why is everyone suddenly standing?",
+    "Dog across the street is staring at me.",
+  ],
+  caught: [
+    "I have never been so humiliated... and relieved.",
+    "The whole park heard that one. And smelled it.",
+    "Sorry! Be thankful you didn't smell mine this morning!",
+    "This bench may never recover.",
+    "I will never return to this bench.",
+    "That was NOT the wind.",
+    "Phew! Sorry if you smelled that... I did my best.",
+    "I may have made a new hole in the ozone layer with that one...",
+    "What? It's natural, y'know!",
+  ],
+  involuntary: [
+    "NO NO NO NO—",
+    "The body has betrayed me!!",
+    "TRAITOR!! My own stomach!!",
+    "That was NOT authorized!!",
+    "EMERGENCY DEPLOYMENT!!",
+    "The dam has burst!! Mayday!!",
+    "Unsanctioned release! Abort! ABORT!",
+    "My gut went rogue!!",
+  ],
+  chaos: [
+    "Maximum output! No holding back!",
+    "This is my gift to the world 💨",
+    "Let 'em have it!! ALL OF THEM!!",
+    "Scorched earth policy activated.",
+    "I am become gas. Destroyer of nostrils.",
+    "Hit as many as you can!! FOR GLORY!!",
+    "The park belongs to me now.",
+    "Releasing the Kraken.",
+    "Strategic weapons grade flatulence.",
+  ],
+  hit: [
+    "Bullseye! 🎯 Direct hit!",
+    "Got one!! The wind carries my legacy.",
+    "Another victim of my magnificence.",
+    "They walked RIGHT into it. Amateurs.",
+    "Combo! Keep going!!",
+    "He'll remember this day forever.",
+    "Nobody can escape the cloud.",
+    "Tag! You're it! 💨",
+    "That one was for you, buddy.",
+  ],
+};
+
+function randFrom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// ── State ───────────────────────────────────────────────────────────────────
+let mode = 'stealth';
+let npcs = [], clouds = [];
+let suspicion = 0, score = 0, gas = 40;
+let gameOver = false;
+let holdDir = 0, holdStart = 0, holdPower = 0;
+let animId, lastTs = 0;
+let npcTimer = 0, cloudTimer = 0;
+let statusClearTimer = null;
+let currentFaceKey = null;
+let currentLeanImg = null; // locked at lean-start
+
+// ── DOM refs ────────────────────────────────────────────────────────────────
+const playerWrap  = document.getElementById('player-wrap');
+const faceImg     = document.getElementById('face-img');
+const faceLabelEl = document.getElementById('face-label');
+const suspBar     = document.getElementById('susp-bar');
+const gasBarEl    = document.getElementById('gas-bar');
+const scoreVal    = document.getElementById('score-val');
+const statusMsg   = document.getElementById('status-msg');
+const overlay     = document.getElementById('overlay');
+const overlayScore= document.getElementById('overlay-score');
+const overlaySub  = document.getElementById('overlay-sub');
+const powerArc    = document.getElementById('power-arc');
+const powerRing   = document.getElementById('power-ring');
+const powerLabel  = document.getElementById('power-label');
+const scene       = document.getElementById('scene');
+const gasCard     = document.getElementById('gas-card');
+
+const NPC_COLORS = ['npc-A','npc-B','npc-C','npc-D'];
+
+function getFaceMeta(){
+
+  const F = selectedCharacter.faces;
+
+  return {
+
+    relaxed:   { src:F.disc_low, label:'relaxed' },
+    holding:   { src:F.disc_low, label:'holding it...' },
+    nervous:   { src:F.disc_low, label:'nervous' },
+
+    disc_high: { src:F.disc_high, label:'pressure...' },
+
+    lean1:     { src:F.lean1, label:'farting...' },
+    lean2:     { src:F.lean2, label:'farting...' },
+    lean_ext:  { src:F.lean_ext, label:'Mmm finally...' },
+
+    relieved:  { src:F.relief, label:'phew!!! 😮‍💨' },
+
+    panicking: { src:F.disc_high, label:'panicking!!' },
+    ohno:      { src:F.disc_high, label:'oh no...' },
+
+    caught1:   { src:F.caught1, label:'CAUGHT!!' },
+    caught2:   { src:F.caught2, label:'BUSTED!!' },
+
+    chaos:     { src:F.disc_high, label:'Ugh, I have another one...' },
+    sniffed:   { src:F.relief, label:'hehe... 😏' }
+
+  };
+}
+
+function setFace(key, force=false) {
+  if (key === currentFaceKey && !force) return;
+  currentFaceKey = key;
+  const META = getFaceMeta();
+const m = META[key] || META.relaxed;
+  faceImg.src = m.src;
+  faceLabelEl.textContent = m.label;
+}
+function selectCharacter(id){
+
+  selectedCharacter = CHARACTERS[id];
+
+  if(selectedCharacter.body){
+    document.getElementById('player-img').src =
+      selectedCharacter.body;
+  }
+
+  document.getElementById('char-select').style.display =
+    'none';
+
+  resetGame();
+}
+
+function setStatus(msg, dur=2800) {
+  statusMsg.textContent = msg;
+  clearTimeout(statusClearTimer);
+  if (dur > 0) statusClearTimer = setTimeout(() => { statusMsg.textContent = ''; }, dur);
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-stealth').classList.toggle('active', m==='stealth');
+  document.getElementById('btn-chaos').classList.toggle('active', m==='chaos');
+  gasCard.style.opacity = m === 'chaos' ? '0.35' : '1';
+  resetGame();
+}
+
+// ── NPC / clouds ─────────────────────────────────────────────────────────────
+function makeNPC() {
+  const el = document.createElement('div');
+  const type = NPC_COLORS[Math.floor(Math.random() * NPC_COLORS.length)];
+  el.className = `npc ${type}`;
+  const dir = Math.random() > 0.5 ? 1 : -1;
+  const speed = (mode === 'chaos' ? 0.5 : 0.55) + Math.random() * 0.8;
+  const startX = dir === 1 ? -40 : scene.clientWidth + 40;
+  el.innerHTML = '<div class="npc-head"></div><div class="npc-body"></div><div class="npc-legs"><div class="npc-leg"></div><div class="npc-leg"></div></div><div class="npc-react"></div>';
+  el.style.left = startX + 'px';
+  scene.appendChild(el);
+  return { el, x: startX, dir, speed, reacted: false };
+}
+
+function spawnCloud(dir, power) {
+  const el = document.createElement('div');
+  el.className = 'cloud';
+  const radius = 18 + power * 28;
+  el.style.width = el.style.height = Math.round(radius * 2) + 'px';
+  el.style.background = power > 0.6 ? 'rgba(180,220,80,0.55)' : 'rgba(200,230,120,0.38)';
+  el.style.border = '1px solid rgba(140,180,40,0.4)';
+  const playerRect = playerWrap.getBoundingClientRect();
+const sceneRect = scene.getBoundingClientRect();
+
+const playerCenterX =
+  playerRect.left - sceneRect.left + playerRect.width / 2;
+
+const baseX = playerCenterX - dir * 50;
+  el.style.left = (baseX - radius) + 'px';
+  el.style.bottom = '90px';
+  el.style.fontSize = Math.round(10 + power * 8) + 'px';
+  el.textContent = power > 0.7 ? '💨' : '';
+  scene.appendChild(el);
+  clouds.push({ el, x: baseX, radius, drift: -dir, power, age: 0, maxAge: 1800 + power * 1200 });
+}
+
+function checkCloudNPC(cloud) {
+  npcs.forEach(n => {
+    if (n.reacted) return;
+    if (Math.abs(n.x - cloud.x) < cloud.radius + 14) {
+      n.reacted = true;
+      const reactEl = n.el.querySelector('.npc-react');
+      if (mode === 'chaos') {
+        reactEl.textContent = '😵';
+        const pts = Math.round(10 + cloud.power * 20);
+        score += pts;
+        scoreVal.textContent = score;
+        setFace('sniffed');
+        setStatus(randFrom(DIALOGUE.hit), 1500);
+      } else {
+        reactEl.textContent = '!';
+        suspicion = Math.min(100, suspicion + 18 + cloud.power * 25);
+
+if (suspicion >= 100) {
+  doGameOver('suspicion');
+  return;
+}
+        setFace('ohno', true);
+        setStatus(randFrom(DIALOGUE.suspicious), 2000);
+      }
+      setTimeout(() => { reactEl.textContent = ''; n.reacted = false; }, 1800);
+    }
+  });
+}
+
+// ── Hold mechanics ────────────────────────────────────────────────────────────
+function startHold(dir) {
+  if (gameOver) return;
+  if (mode === 'stealth' && gas <= 1) return;
+  holdDir = dir;
+  holdStart = performance.now();
+  powerRing.style.opacity = '1';
+  // Lock lean image at start of this lean action
+  currentLeanImg = Math.random() < 0.5 ? 'lean1' : 'lean2';
+  setFace(currentLeanImg, true);
+  setStatus(randFrom(DIALOGUE.leaning), 0);
+}
+
+function stopHold() {
+  if (holdDir === 0) return;
+  holdDir = 0;
+  holdPower = 0;
+  playerWrap.className = '';
+  powerRing.style.opacity = '0';
+  powerArc.setAttribute('stroke-dasharray', '0 ' + CIRC);
+  powerLabel.textContent = '';
+  currentLeanImg = null;
+  // Brief relief
+  setFace('relieved', true);
+  setStatus(randFrom(DIALOGUE.release), 2200);
+  setTimeout(() => {
+    if (!gameOver && holdDir === 0) {
+      currentFaceKey = null; // allow idle to update
+    }
+  }, 900);
+}
+
+function updateHold(dt) {
+  if (holdDir === 0) return;
+  if (mode === 'stealth' && gas <= 0) { stopHold(); return; }
+
+  const elapsed = performance.now() - holdStart;
+  holdPower = Math.min(1, elapsed / 3000);
+  const arcLen = holdPower * CIRC;
+  powerArc.setAttribute('stroke-dasharray', arcLen.toFixed(1) + ' ' + (CIRC - arcLen).toFixed(1));
+  powerArc.setAttribute('stroke', holdPower > 0.7 ? '#cc2200' : holdPower > 0.4 ? '#e8a020' : '#E75480');
+  powerLabel.textContent = holdPower > 0.7 ? 'MAX' : holdPower > 0.4 ? 'strong' : 'light';
+
+  // Player lean visual — use locked image, upgrade to extreme if power high
+  if (holdPower > 0.75) {
+    playerWrap.className = holdDir === -1 ? 'lean-extreme-left' : 'lean-extreme-right';
+    setFace('lean_ext', false); // only if not already
+  } else {
+    playerWrap.className = holdDir === -1 ? 'lean-left' : 'lean-right';
+    if (currentFaceKey !== currentLeanImg) setFace(currentLeanImg, true);
+  }
+
+  // Gas drains very slowly while holding
+  if (mode === 'stealth') {
+    gas = Math.max(0, gas - dt * 0.006 * (0.5 + holdPower * 0.5));
+  }
+
+  cloudTimer += dt;
+  const interval = Math.max(140, 420 - holdPower * 280);
+  if (cloudTimer >= interval) {
+    cloudTimer = 0;
+    spawnCloud(holdDir, holdPower);
+  }
+}
+
+// ── Clouds, NPCs, bars ───────────────────────────────────────────────────────
+function updateClouds(dt) {
+  clouds = clouds.filter(c => {
+    c.age += dt;
+    c.x += c.drift * dt * 0.04 * (0.5 + c.power);
+    c.el.style.left = (c.x - c.radius) + 'px';
+    c.el.style.opacity = String(Math.max(0, 1 - (c.age / c.maxAge) ** 2));
+    checkCloudNPC(c);
+    if (c.age >= c.maxAge) { c.el.remove(); return false; }
+    return true;
+  });
+}
+
+function updateNPCs(dt) {
+  npcTimer += dt;
+  if (npcTimer > (mode === 'chaos' ? 2000 : 2800) && npcs.length < 5) {
+    npcTimer = 0;
+    npcs.push(makeNPC());
+  }
+  npcs = npcs.filter(n => {
+    n.x += n.dir * n.speed;
+    n.el.style.left = Math.round(n.x) + 'px';
+    if (n.x < -80 || n.x > W + 80) { n.el.remove(); return false; }
+    return true;
+  });
+}
+
+function updateSuspicion(dt) {
+  if (mode === 'chaos') return;
+  if (suspicion > 0) suspicion = Math.max(0, suspicion - dt * 0.005);
+  if (suspicion >= 100) { doGameOver('suspicion'); }
+}
+
+function updateGas(dt) {
+  if (mode === 'chaos') return;
+  // Build up fast when not releasing
+  if (holdDir === 0) gas = Math.min(100, gas + dt * 0.022);
+  if (gas >= 100) {
+    gas = 20;
+    spawnCloud(Math.random() > 0.5 ? 1 : -1, 0.85);
+    suspicion = Math.min(100, suspicion + 30);
+
+if (suspicion >= 100) {
+  doGameOver('suspicion');
+  return;
+}
+    setStatus(randFrom(DIALOGUE.involuntary), 2500);
+  }
+}
+
+let idleDialogueTimer = 0;
+function updateFaceIdle() {
+  if (holdDir !== 0 || gameOver) return;
+  if (currentFaceKey === 'relieved') return; // don't interrupt relief
+
+  if (mode === 'chaos') { setFace('chaos'); return; }
+
+  if (suspicion > 70)   setFace('panicking');
+  else if (suspicion > 40) setFace('nervous');
+  else if (gas > 78)    setFace('disc_high');
+  else if (gas > 48)    setFace('holding');
+  else                  setFace('relaxed');
+}
+
+// Periodic idle dialogue
+let idleDialogTimer = 0;
+function updateIdleDialogue(dt) {
+  if (holdDir !== 0 || gameOver) return;
+  idleDialogTimer += dt;
+  if (idleDialogTimer > 4500) {
+    idleDialogTimer = 0;
+    if (mode === 'chaos') {
+      setStatus(randFrom(DIALOGUE.chaos), 3000);
+    } else if (suspicion > 50) {
+      setStatus(randFrom(DIALOGUE.suspicious), 3000);
+    } else {
+      setStatus(randFrom(DIALOGUE.holding), 3000);
+    }
+  }
+}
+
+function updateBars() {
+  const s = Math.round(suspicion);
+  suspBar.style.width = s + '%';
+  suspBar.style.background = s > 70 ? '#cc2200' : s > 40 ? '#e8a020' : '#3a9e3a';
+  const g = Math.round(gas);
+  gasBarEl.style.width = g + '%';
+  gasBarEl.style.background = g > 75 ? '#cc2200' : g > 50 ? '#e8a020' : '#3a9e3a';
+}
+
+// ── Game over ────────────────────────────────────────────────────────────────
+function doGameOver(reason) {
+  if (gameOver) return;
+  gameOver = true;
+
+  // Pick a single caught image per loss type — no swapping
+  let caughtKey, title, sub;
+  if (reason === 'suspicion') {
+    caughtKey = 'caught1';
+    title = '😳 Busted!';
+    sub = randFrom(DIALOGUE.caught);
+  } else {
+    caughtKey = 'caught2';
+    title = '💨 You Lost It!';
+    sub = randFrom(DIALOGUE.involuntary);
+  }
+
+  holdDir = 0; holdPower = 0;
+  playerWrap.className = '';
+  powerRing.style.opacity = '0';
+  cancelAnimationFrame(animId);
+  setFace(caughtKey, true);
+
+  overlay.querySelector('#overlay-title').textContent = title;
+  overlaySub.textContent = sub;
+  overlayScore.textContent = 'Final score: ' + score;
+  overlay.classList.add('show');
+}
+
+// ── Reset ────────────────────────────────────────────────────────────────────
+function resetGame() {
+  npcs.forEach(n => n.el.remove()); npcs = [];
+  clouds.forEach(c => c.el.remove()); clouds = [];
+  suspicion = 0; score = 0; gas = 40; gameOver = false;
+  holdDir = 0; holdPower = 0; npcTimer = 0; cloudTimer = 0;
+  lastTs = 0; currentFaceKey = null; currentLeanImg = null;
+  idleDialogTimer = 0;
+  playerWrap.className = '';
+  powerRing.style.opacity = '0';
+  powerArc.setAttribute('stroke-dasharray', '0 ' + CIRC);
+  powerLabel.textContent = '';
+  scoreVal.textContent = '0';
+  overlay.classList.remove('show');
+  setFace(mode === 'chaos' ? 'chaos' : 'relaxed', true);
+  setStatus(mode === 'chaos'
+    ? randFrom(DIALOGUE.chaos)
+    : 'Hold a button to lean and fart — longer = more powerful!', 0);
+  for (let i = 0; i < 2; i++) setTimeout(() => { if (!gameOver) npcs.push(makeNPC()); }, i * 900 + 400);
+  cancelAnimationFrame(animId);
+  animId = requestAnimationFrame(loop);
+}
+
+// ── Loop ─────────────────────────────────────────────────────────────────────
+function loop(ts) {
+  if (gameOver) return;
+  const dt = Math.min(ts - (lastTs || ts), 50);
+  lastTs = ts;
+  updateHold(dt);
+  updateClouds(dt);
+  updateNPCs(dt);
+  updateSuspicion(dt);
+  updateGas(dt);
+  updateBars();
+  updateFaceIdle();
+  updateIdleDialogue(dt);
+  animId = requestAnimationFrame(loop);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+const btnLeft  = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+
+function attachBtn(btn, dir) {
+  btn.addEventListener('mousedown',  e => { e.preventDefault(); btn.classList.add('held');    startHold(dir); });
+  btn.addEventListener('touchstart', e => { e.preventDefault(); btn.classList.add('held');    startHold(dir); }, { passive: false });
+  const up = () => { btn.classList.remove('held'); stopHold(); };
+  btn.addEventListener('mouseup',    up);
+  btn.addEventListener('mouseleave', up);
+  btn.addEventListener('touchend',   up);
+  btn.addEventListener('touchcancel',up);
+}
+attachBtn(btnLeft,  -1);
+attachBtn(btnRight,  1);
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (gameOver) return;
+  if ((e.key==='ArrowLeft'||e.key==='a') && !keys.left)  { keys.left=true;  btnLeft.classList.add('held');  startHold(-1); }
+  if ((e.key==='ArrowRight'||e.key==='d') && !keys.right){ keys.right=true; btnRight.classList.add('held'); startHold(1);  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key==='ArrowLeft'||e.key==='a')  { keys.left=false;  btnLeft.classList.remove('held');  stopHold(); }
+  if (e.key==='ArrowRight'||e.key==='d') { keys.right=false; btnRight.classList.remove('held'); stopHold(); }
+});
+
+CHARACTERS.char1.body =
+  document.getElementById('player-img').src;
+
+document.getElementById('char1-preview').src =
+  CHARACTERS.char1.profile;
+
+document.getElementById('char2-preview').src =
+  CHARACTERS.char2.profile;
+
+document.getElementById('char-select').style.display =
+  'flex';
+</script>
+</body>
+</html>
