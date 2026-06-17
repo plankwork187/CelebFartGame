@@ -45,12 +45,44 @@ body { font-family: sans-serif; }
 }
 
 .cloud { position: absolute; border-radius: 50%; pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 13px; z-index: 5; }
-.npc { position: absolute; bottom: 132px; width: 56px; height: 112px; z-index: 4; }
+.npc { position: absolute; bottom: 132px; width: 56px; height: 112px; z-index: 1; }
 .npc-head { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 36px; height: 36px; border-radius: 50%; }
 .npc-body { position: absolute; top: 32px; left: 50%; transform: translateX(-50%); width: 40px; height: 48px; border-radius: 6px; }
 .npc-legs { position: absolute; top: 76px; left: 50%; transform: translateX(-50%); width: 40px; display: flex; gap: 6px; height: 36px; }
 .npc-leg { flex: 1; border-radius: 4px 4px 8px 8px; }
 .npc-react { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 14px; pointer-events: none; }
+
+/* NPC speech bubble */
+.npc-speech {
+  position: absolute;
+  top: -46px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1.5px solid #ccc;
+  border-radius: 10px;
+  padding: 4px 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.13);
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.npc-speech::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #ccc;
+}
+.npc-speech.visible { opacity: 1; }
+
 .npc-A .npc-head { background: #DEB887; }
 .npc-A .npc-body { background: #228B22; }
 .npc-A .npc-leg { background: #8B4513; }
@@ -224,8 +256,9 @@ body { font-family: sans-serif; }
 </div>
 
 <script>
-const W = 680;
-const PLAYER_X = W / 2;
+// Dynamic scene width — always reflects the actual rendered width
+function getW() { return scene.clientWidth || 680; }
+const PLAYER_X_FRAC = 0.5; // player is always horizontally centred
 const CIRC = 2 * Math.PI * 26;
 
 // ── Image data ─────────────────────────────────────────────────────────────
@@ -426,9 +459,278 @@ const DIALOGUE = {
     "Tag! You're it! 💨",
     "That one was for you, buddy.",
   ],
+
+  // ── NPC speech bubbles (shown over NPCs when they react) ─────────────────
+  npc_mild: [
+    "Hm...",
+    "Is it just me...?",
+    "...weird.",
+    "Something's off.",
+    "Hmm... odd.",
+    "What's that smell?",
+  ],
+  npc_medium: [
+    "What is that smell?",
+    "Who did that?",
+    "Ugh... seriously?",
+    "Ok who was it?",
+    "That's... not great.",
+    "Oh come ON.",
+    "Is that... sulfur?",
+    "Something smells off...",
+  ],
+  npc_strong: [
+    "Jesus! What IS that?!",
+    "OH MY GOD.",
+    "That is absolutely FOUL.",
+    "WHO DID THAT?!",
+    "Oh that's RANK.",
+    "I— I need to move.",
+    "My eyes are watering!!",
+    "What DIED in here?!",
+    "That's a biohazard!!",
+  ],
+  npc_chaos: [
+    "I'm going to be SICK.",
+    "EVACUATE. NOW.",
+    "My lungs!! MY LUNGS!!",
+    "This is a war crime!!",
+    "Someone call 911!!",
+    "Is there a GAS LEAK?!",
+    "GET OUT GET OUT GET OUT",
+  ],
 };
 
 function randFrom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║                        AUDIO — MUSIC & SFX & VOICE                     ║
+// ║  All paths are placeholders.  Replace the src strings with your files.  ║
+// ║  Audio calls are commented out — uncomment a.play() in each object      ║
+// ║  once the assets are in place.                                           ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+
+// ── Music tracks ─────────────────────────────────────────────────────────────
+// Call MUSIC.play('key') to crossfade/start, MUSIC.stop() to stop.
+const MUSIC_TRACKS = {
+  //  key              src                                  loop    volume
+  menu:       { src: 'audio/music_menu.mp3',            loop: true,  volume: 0.5  },
+  stealth:    { src: 'audio/music_stealth.mp3',         loop: true,  volume: 0.4  },
+  stealthHigh:{ src: 'audio/music_stealth_tense.mp3',   loop: true,  volume: 0.45 }, // suspicion > 60
+  chaos:      { src: 'audio/music_chaos.mp3',           loop: true,  volume: 0.5  },
+  gameover:   { src: 'audio/music_gameover.mp3',        loop: false, volume: 0.6  },
+  victory:    { src: 'audio/music_victory.mp3',         loop: false, volume: 0.6  }, // future high-score screen
+};
+
+const MUSIC = (() => {
+  let current = null; // { audio, key }
+  return {
+    play(key) {
+      const def = MUSIC_TRACKS[key];
+      if (!def) return;
+      if (current && current.key === key) return;
+      if (current) { current.audio.pause(); current.audio.currentTime = 0; }
+      const a = new Audio(def.src);
+      a.loop   = def.loop;
+      a.volume = def.volume;
+      // Uncomment once audio files are in place:
+      // a.play().catch(() => {});
+      current = { audio: a, key };
+    },
+    stop() {
+      if (!current) return;
+      current.audio.pause();
+      current.audio.currentTime = 0;
+      current = null;
+    },
+    setVolume(v) {
+      if (current) current.audio.volume = Math.max(0, Math.min(1, v));
+    },
+  };
+})();
+
+// ── Sound effects ─────────────────────────────────────────────────────────────
+// Each entry has an array of srcs — a random one is picked per play() call
+// so repeated sounds feel naturally varied.
+const SFX_DEFS = {
+  //  key              src paths                                              volume
+  fart_light:   { srcs: ['audio/sfx_fart_light_1.mp3',
+                          'audio/sfx_fart_light_2.mp3',
+                          'audio/sfx_fart_light_3.mp3'],                  volume: 0.7  },
+  fart_medium:  { srcs: ['audio/sfx_fart_medium_1.mp3',
+                          'audio/sfx_fart_medium_2.mp3'],                  volume: 0.75 },
+  fart_strong:  { srcs: ['audio/sfx_fart_strong_1.mp3',
+                          'audio/sfx_fart_strong_2.mp3'],                  volume: 0.8  },
+  fart_mega:    { srcs: ['audio/sfx_fart_mega_1.mp3',
+                          'audio/sfx_fart_mega_2.mp3'],                    volume: 0.9  },
+  fart_involuntary: { srcs: ['audio/sfx_fart_involuntary.mp3'],            volume: 0.9  },
+  npc_react:    { srcs: ['audio/sfx_npc_react_1.mp3',
+                          'audio/sfx_npc_react_2.mp3'],                    volume: 0.6  },
+  score:        { srcs: ['audio/sfx_score.mp3'],                           volume: 0.5  },
+  score_big:    { srcs: ['audio/sfx_score_big.mp3'],                       volume: 0.65 }, // milestone
+  busted:       { srcs: ['audio/sfx_busted.mp3'],                          volume: 0.85 },
+  button_press: { srcs: ['audio/sfx_button.mp3'],                          volume: 0.4  },
+  crowd_gasp:   { srcs: ['audio/sfx_crowd_gasp.mp3'],                      volume: 0.55 }, // chaos big hit
+};
+
+const SFX = (() => ({
+  play(key) {
+    const def = SFX_DEFS[key];
+    if (!def) return;
+    const src = def.srcs[Math.floor(Math.random() * def.srcs.length)];
+    const a = new Audio(src);
+    a.volume = def.volume;
+    // Uncomment once audio files are in place:
+    // a.play().catch(() => {});
+  },
+}))();
+
+// ── Fart SFX helper — picks tier by power ────────────────────────────────────
+function playFartSFX(power, involuntary = false) {
+  if (involuntary)       { SFX.play('fart_involuntary'); return; }
+  if (power > 0.75)      SFX.play('fart_mega');
+  else if (power > 0.5)  SFX.play('fart_strong');
+  else if (power > 0.25) SFX.play('fart_medium');
+  else                   SFX.play('fart_light');
+}
+
+// ── Voice lines — CHARACTER (player) ─────────────────────────────────────────
+// Triggered at specific gameplay moments.  Each key maps to an array of clip
+// paths; a random one is chosen each time so repeated events never feel stale.
+// Replace src paths; add more clips to each array freely.
+const VOICE_PLAYER = {
+  // ── Holding / idle pressure ──────────────────────────────────────────────
+  holding_idle:  [ 'audio/voice/player_holding_1.mp3',    // "Ok just hold it together..."
+                   'audio/voice/player_holding_2.mp3',    // "Not now, not now..."
+                   'audio/voice/player_holding_3.mp3' ],  // "My stomach is staging a revolt"
+
+  // ── Starting a lean / release ────────────────────────────────────────────
+  lean_start:    [ 'audio/voice/player_lean_1.mp3',       // "Angle of attack confirmed"
+                   'audio/voice/player_lean_2.mp3' ],     // "Strategic tilt engaged"
+
+  // ── Successful release ───────────────────────────────────────────────────
+  release_clean: [ 'audio/voice/player_release_1.mp3',    // "Silent but deadly. As planned."
+                   'audio/voice/player_release_2.mp3',    // "Mission accomplished"
+                   'audio/voice/player_release_3.mp3',    // "That one had RANGE"
+                   'audio/voice/player_release_4.mp3' ],  // "Perfectly executed. No witnesses."
+
+  // ── Suspicion rising ─────────────────────────────────────────────────────
+  nervous:       [ 'audio/voice/player_nervous_1.mp3',    // "They know. They all know."
+                   'audio/voice/player_nervous_2.mp3',    // "Play it cool..."
+                   'audio/voice/player_nervous_3.mp3' ],  // "ACT. NATURAL."
+
+  // ── Caught ───────────────────────────────────────────────────────────────
+  caught:        [ 'audio/voice/player_caught_1.mp3',     // "I have never been so humiliated"
+                   'audio/voice/player_caught_2.mp3' ],   // "The whole park heard that one"
+
+  // ── Involuntary fart ─────────────────────────────────────────────────────
+  involuntary:   [ 'audio/voice/player_involuntary_1.mp3', // "NO NO NO NO—"
+                   'audio/voice/player_involuntary_2.mp3', // "The body has betrayed me!!"
+                   'audio/voice/player_involuntary_3.mp3'], // "TRAITOR!! My own stomach!!"
+
+  // ── Chaos mode ───────────────────────────────────────────────────────────
+  chaos_idle:    [ 'audio/voice/player_chaos_1.mp3',      // "Maximum output!"
+                   'audio/voice/player_chaos_2.mp3' ],    // "The park belongs to me now"
+
+  // ── Gas pressure warnings ────────────────────────────────────────────────
+  pressure_high: [ 'audio/voice/player_pressure_1.mp3',   // "The pressure is... immense"
+                   'audio/voice/player_pressure_2.mp3' ],  // "Internal weather: severe turbulence"
+
+  // ── Score milestones (optional) ──────────────────────────────────────────
+  milestone_50:  [ 'audio/voice/player_milestone_50.mp3' ],
+  milestone_100: [ 'audio/voice/player_milestone_100.mp3' ],
+  milestone_200: [ 'audio/voice/player_milestone_200.mp3' ],
+};
+
+// ── Voice lines — NPCs ────────────────────────────────────────────────────────
+// Played when an NPC reacts to a cloud.  Grouped by intensity.
+const VOICE_NPC = {
+  // ── Mild / confused ──────────────────────────────────────────────────────
+  mild:    [ 'audio/voice/npc_mild_1.mp3',    // "Hm... what's that smell?"
+             'audio/voice/npc_mild_2.mp3',    // "Is something... burning?"
+             'audio/voice/npc_mild_3.mp3' ],  // "Weird..."
+
+  // ── Medium / suspicious ──────────────────────────────────────────────────
+  medium:  [ 'audio/voice/npc_medium_1.mp3',  // "What IS that smell?"
+             'audio/voice/npc_medium_2.mp3',  // "Who did that?!"
+             'audio/voice/npc_medium_3.mp3',  // "Ugh, seriously?!"
+             'audio/voice/npc_medium_4.mp3' ],// "OK who was it?"
+
+  // ── Strong / disgusted ───────────────────────────────────────────────────
+  strong:  [ 'audio/voice/npc_strong_1.mp3',  // "Jesus! What IS that?!"
+             'audio/voice/npc_strong_2.mp3',  // "OH MY GOD."
+             'audio/voice/npc_strong_3.mp3',  // "That is FOUL."
+             'audio/voice/npc_strong_4.mp3',  // "Who did that?! WHO DID THAT?!"
+             'audio/voice/npc_strong_5.mp3' ],// "I'm going to be sick!"
+
+  // ── Chaos mode ───────────────────────────────────────────────────────────
+  chaos:   [ 'audio/voice/npc_chaos_1.mp3',   // "My eyes are WATERING!"
+             'audio/voice/npc_chaos_2.mp3',   // "I need to leave. NOW."
+             'audio/voice/npc_chaos_3.mp3' ], // *gagging sounds*
+};
+
+// Helper — pick NPC voice tier by cloud power
+function playNPCVoice(power) {
+  let pool;
+  if (mode === 'chaos')      pool = VOICE_NPC.chaos;
+  else if (power > 0.65)     pool = VOICE_NPC.strong;
+  else if (power > 0.35)     pool = VOICE_NPC.medium;
+  else                       pool = VOICE_NPC.mild;
+  const src = pool[Math.floor(Math.random() * pool.length)];
+  const a = new Audio(src);
+  a.volume = 0.7;
+  // Uncomment once audio files are in place:
+  // a.play().catch(() => {});
+}
+
+// Helper — play a random player voice line by key
+function playPlayerVoice(key) {
+  const pool = VOICE_PLAYER[key];
+  if (!pool) return;
+  const src = pool[Math.floor(Math.random() * pool.length)];
+  const a = new Audio(src);
+  a.volume = 0.8;
+  // Uncomment once audio files are in place:
+  // a.play().catch(() => {});
+}
+
+// ── Audio call-site reference ─────────────────────────────────────────────────
+// All intended hook locations (grep for these to wire them up):
+//
+//  MUSIC ────────────────────────────────────────────────────────────────────
+//   MUSIC.play('stealth')          → resetGame(), stealth mode
+//   MUSIC.play('chaos')            → resetGame(), chaos mode
+//   MUSIC.play('stealthHigh')      → updateFaceIdle(), suspicion > 60
+//   MUSIC.play('gameover')         → doGameOver()
+//   MUSIC.stop()                   → resetGame() before new track
+//
+//  SFX ──────────────────────────────────────────────────────────────────────
+//   playFartSFX(power)             → spawnCloud()  (voluntary)
+//   playFartSFX(0.85, true)        → updateGas()   (involuntary)
+//   SFX.play('npc_react')          → checkCloudNPC() mild/medium reactions
+//   SFX.play('crowd_gasp')         → checkCloudNPC() strong/chaos reactions
+//   SFX.play('score')              → stopHold() stealth score grant
+//   SFX.play('score_big')          → score milestone reached
+//   SFX.play('busted')             → doGameOver()
+//   SFX.play('button_press')       → button mousedown/touchstart
+//
+//  VOICE — PLAYER ───────────────────────────────────────────────────────────
+//   playPlayerVoice('holding_idle')  → updateIdleDialogue() stealth idle
+//   playPlayerVoice('lean_start')    → startHold()
+//   playPlayerVoice('release_clean') → stopHold()
+//   playPlayerVoice('nervous')       → updateIdleDialogue() suspicion > 50
+//   playPlayerVoice('caught')        → doGameOver()
+//   playPlayerVoice('involuntary')   → updateGas() involuntary release
+//   playPlayerVoice('chaos_idle')    → updateIdleDialogue() chaos mode
+//   playPlayerVoice('pressure_high') → updateFaceIdle() gas > 78
+//   playPlayerVoice('milestone_50')  → stopHold() when score crosses 50
+//   playPlayerVoice('milestone_100') → stopHold() when score crosses 100
+//   playPlayerVoice('milestone_200') → stopHold() when score crosses 200
+//
+//  VOICE — NPC ──────────────────────────────────────────────────────────────
+//   playNPCVoice(cloud.power)        → checkCloudNPC() on NPC hit
+
+// ── END AUDIO SECTION ─────────────────────────────────────────────────────────
 
 // ── State ───────────────────────────────────────────────────────────────────
 let mode = 'stealth';
@@ -438,6 +740,7 @@ let gameOver = false;
 let holdDir = 0, holdStart = 0, holdPower = 0;
 let animId, lastTs = 0;
 let npcTimer = 0, cloudTimer = 0;
+let gameTime = 0;       // ms elapsed since game start — drives stealth NPC escalation
 let statusClearTimer = null;
 let currentFaceKey = null;
 let currentLeanImg = null; // locked at lean-start
@@ -534,9 +837,10 @@ function makeNPC() {
   const type = NPC_COLORS[Math.floor(Math.random() * NPC_COLORS.length)];
   el.className = `npc ${type}`;
   const dir = Math.random() > 0.5 ? 1 : -1;
-  const speed = (mode === 'chaos' ? 0.5 : 0.55) + Math.random() * 0.8;
-  const startX = dir === 1 ? -40 : scene.clientWidth + 40;
-  el.innerHTML = '<div class="npc-head"></div><div class="npc-body"></div><div class="npc-legs"><div class="npc-leg"></div><div class="npc-leg"></div></div><div class="npc-react"></div>';
+  const speed = (mode === 'chaos' ? 0.55 : 0.6) + Math.random() * 0.9;
+  const W = getW();
+  const startX = dir === 1 ? -60 : W + 60;
+  el.innerHTML = '<div class="npc-head"></div><div class="npc-body"></div><div class="npc-legs"><div class="npc-leg"></div><div class="npc-leg"></div></div><div class="npc-react"></div><div class="npc-speech"></div>';
   el.style.left = startX + 'px';
   scene.appendChild(el);
   return { el, x: startX, dir, speed, reacted: false };
@@ -569,26 +873,48 @@ function checkCloudNPC(cloud) {
     if (n.reacted) return;
     if (Math.abs(n.x - cloud.x) < cloud.radius + 14) {
       n.reacted = true;
-      const reactEl = n.el.querySelector('.npc-react');
+      const reactEl  = n.el.querySelector('.npc-react');
+      const speechEl = n.el.querySelector('.npc-speech');
+
+      // Pick speech text and reaction emoji by power + mode
+      let speechPool, emoji;
       if (mode === 'chaos') {
-        reactEl.textContent = '😵';
+        speechPool = DIALOGUE.npc_chaos;
+        emoji = '😵';
+      } else if (cloud.power > 0.65) {
+        speechPool = DIALOGUE.npc_strong;
+        emoji = '🤢';
+      } else if (cloud.power > 0.35) {
+        speechPool = DIALOGUE.npc_medium;
+        emoji = '😦';
+      } else {
+        speechPool = DIALOGUE.npc_mild;
+        emoji = '❓';
+      }
+
+      reactEl.textContent = emoji;
+      speechEl.textContent = randFrom(speechPool);
+      speechEl.classList.add('visible');
+
+      if (mode === 'chaos') {
         const pts = Math.round(10 + cloud.power * 20);
         score += pts;
         scoreVal.textContent = score;
         setFace('sniffed');
         setStatus(randFrom(DIALOGUE.hit), 1500);
       } else {
-        reactEl.textContent = '!';
         suspicion = Math.min(100, suspicion + 18 + cloud.power * 25);
-
-if (suspicion >= 100) {
-  doGameOver('suspicion');
-  return;
-}
+        if (suspicion >= 100) { doGameOver('suspicion'); return; }
         setFace('ohno', true);
         setStatus(randFrom(DIALOGUE.suspicious), 2000);
       }
-      setTimeout(() => { reactEl.textContent = ''; n.reacted = false; }, 1800);
+
+      setTimeout(() => {
+        reactEl.textContent = '';
+        speechEl.textContent = '';
+        speechEl.classList.remove('visible');
+        n.reacted = false;
+      }, 2400);
     }
   });
 }
@@ -600,7 +926,6 @@ function startHold(dir) {
   holdDir = dir;
   holdStart = performance.now();
   powerRing.style.opacity = '1';
-  // Lock lean image at start of this lean action
   currentLeanImg = Math.random() < 0.5 ? 'lean1' : 'lean2';
   setFace(currentLeanImg, true);
   setStatus(randFrom(DIALOGUE.leaning), 0);
@@ -608,6 +933,7 @@ function startHold(dir) {
 
 function stopHold() {
   if (holdDir === 0) return;
+  const releasedPower = holdPower; // capture before reset
   holdDir = 0;
   holdPower = 0;
   playerWrap.className = '';
@@ -623,6 +949,22 @@ function stopHold() {
       currentFaceKey = null; // allow idle to update
     }
   }, 900);
+
+  // ── Stealth scoring ───────────────────────────────────────────────────────
+  // Points for successfully releasing gas without getting caught.
+  // Base = power × 15, plus a bonus for nearby NPCs (risky = rewarding).
+  if (mode === 'stealth') {
+    const W = getW();
+    const playerX = W / 2;
+    const nearbyCount = npcs.filter(n => Math.abs(n.x - playerX) < W * 0.35).length;
+    const nearbyBonus = nearbyCount * 8;
+    const pts = Math.round(releasedPower * 15 + nearbyBonus);
+    if (pts > 0) {
+      score += pts;
+      scoreVal.textContent = score;
+      SFX.play('score');
+    }
+  }
 }
 
 function updateHold(dt) {
@@ -645,9 +987,11 @@ function updateHold(dt) {
     if (currentFaceKey !== currentLeanImg) setFace(currentLeanImg, true);
   }
 
-  // Gas drains very slowly while holding
+  // Gas drain: exponential curve — longer hold = much faster drain
+  // At power=0: ~0.004/ms. At power=1: ~0.018/ms (4.5× faster)
   if (mode === 'stealth') {
-    gas = Math.max(0, gas - dt * 0.006 * (0.5 + holdPower * 0.5));
+    const drainRate = 0.004 + holdPower * holdPower * 0.014;
+    gas = Math.max(0, gas - dt * drainRate);
   }
 
   cloudTimer += dt;
@@ -673,14 +1017,33 @@ function updateClouds(dt) {
 
 function updateNPCs(dt) {
   npcTimer += dt;
-  if (npcTimer > (mode === 'chaos' ? 2000 : 2800) && npcs.length < 5) {
+  const W = getW();
+
+  let spawnInterval, maxNPCs;
+  if (mode === 'chaos') {
+    // Chaos: busy and fast the whole time
+    spawnInterval = 1400;
+    maxNPCs = Math.max(5, Math.floor(W / 130));
+  } else {
+    // Stealth: escalate over ~2 minutes (120 000 ms)
+    // t goes 0 → 1 as gameTime goes 0 → 120 s
+    const t = Math.min(1, gameTime / 120000);
+    // Interval: starts at 7 s, ramps down to 2.2 s
+    spawnInterval = 7000 - t * 4800;
+    // Max NPCs: starts at 2, ramps up to 7 (also scales with width)
+    const widthBonus = Math.floor((W - 680) / 200); // 0 at 680px, +1 per 200px extra
+    maxNPCs = Math.round(2 + t * 5) + Math.max(0, widthBonus);
+  }
+
+  if (npcTimer > spawnInterval && npcs.length < maxNPCs) {
     npcTimer = 0;
     npcs.push(makeNPC());
   }
+
   npcs = npcs.filter(n => {
     n.x += n.dir * n.speed;
     n.el.style.left = Math.round(n.x) + 'px';
-    if (n.x < -80 || n.x > W + 80) { n.el.remove(); return false; }
+    if (n.x < -100 || n.x > W + 100) { n.el.remove(); return false; }
     return true;
   });
 }
@@ -693,17 +1056,16 @@ function updateSuspicion(dt) {
 
 function updateGas(dt) {
   if (mode === 'chaos') return;
-  // Build up fast when not releasing
-  if (holdDir === 0) gas = Math.min(100, gas + dt * 0.022);
+  // Fill slowly overall; crawl in the last 15% to avoid cheap accidents
+  if (holdDir === 0) {
+    const proximity = Math.max(0, (gas - 85) / 15); // 0 at ≤85, 1 at 100
+    const rate = 0.010 * (1 - proximity * 0.82);    // slows to ~18% speed near full
+    gas = Math.min(100, gas + dt * rate);
+  }
   if (gas >= 100) {
-    gas = 20;
-    spawnCloud(Math.random() > 0.5 ? 1 : -1, 0.85);
-    suspicion = Math.min(100, suspicion + 30);
-
-if (suspicion >= 100) {
-  doGameOver('suspicion');
-  return;
-}
+    // Involuntary: big cloud but only drains ~35 units — not a full reset
+    gas = Math.max(0, gas - 35);
+    spawnCloud(Math.random() > 0.5 ? 1 : -1, 0.9); // slightly bigger than voluntary max
     setStatus(randFrom(DIALOGUE.involuntary), 2500);
   }
 }
@@ -711,15 +1073,15 @@ if (suspicion >= 100) {
 let idleDialogueTimer = 0;
 function updateFaceIdle() {
   if (holdDir !== 0 || gameOver) return;
-  if (currentFaceKey === 'relieved') return; // don't interrupt relief
+  if (currentFaceKey === 'relieved') return;
 
   if (mode === 'chaos') { setFace('chaos'); return; }
 
-  if (suspicion > 70)   setFace('panicking');
-  else if (suspicion > 40) setFace('nervous');
-  else if (gas > 78)    setFace('disc_high');
-  else if (gas > 48)    setFace('holding');
-  else                  setFace('relaxed');
+  if (suspicion > 70)      { setFace('panicking'); }
+  else if (suspicion > 40) { setFace('nervous'); }
+  else if (gas > 78)       { setFace('disc_high'); }
+  else if (gas > 48)       { setFace('holding'); }
+  else                     { setFace('relaxed'); }
 }
 
 // Periodic idle dialogue
@@ -782,7 +1144,7 @@ function resetGame() {
   npcs.forEach(n => n.el.remove()); npcs = [];
   clouds.forEach(c => c.el.remove()); clouds = [];
   suspicion = 0; score = 0; gas = 40; gameOver = false;
-  holdDir = 0; holdPower = 0; npcTimer = 0; cloudTimer = 0;
+  holdDir = 0; holdPower = 0; npcTimer = 0; cloudTimer = 0; gameTime = 0;
   lastTs = 0; currentFaceKey = null; currentLeanImg = null;
   idleDialogTimer = 0;
   playerWrap.className = '';
@@ -795,7 +1157,12 @@ function resetGame() {
   setStatus(mode === 'chaos'
     ? randFrom(DIALOGUE.chaos)
     : 'Hold a button to lean and fart — longer = more powerful!', 0);
-  for (let i = 0; i < 2; i++) setTimeout(() => { if (!gameOver) npcs.push(makeNPC()); }, i * 900 + 400);
+  // Seed initial NPCs — walk in naturally from the edges
+  // Stealth starts sparse; chaos starts busier
+  const seedCount = mode === 'chaos' ? Math.max(3, Math.floor(getW() / 200)) : 1;
+  for (let i = 0; i < seedCount; i++) {
+    setTimeout(() => { if (!gameOver) npcs.push(makeNPC()); }, i * 600 + 300);
+  }
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
 }
@@ -805,6 +1172,7 @@ function loop(ts) {
   if (gameOver) return;
   const dt = Math.min(ts - (lastTs || ts), 50);
   lastTs = ts;
+  if (mode === 'stealth') gameTime += dt;
   updateHold(dt);
   updateClouds(dt);
   updateNPCs(dt);
